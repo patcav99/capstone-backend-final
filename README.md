@@ -1,2 +1,3 @@
 # Backend Django
-![aws sqs (2)](https://github.com/user-attachments/assets/341d2706-b9d1-4a37-a984-f9f85cf5aa47)
+
+![1i (57)](https://github.com/user-attachments/assets/0d84814f-8f0e-4f8f-b3fd-6fd696cbbe15)
