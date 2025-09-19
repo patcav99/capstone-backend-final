@@ -87,7 +87,7 @@ WSGI_APPLICATION = 'blog.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'capstonefinalratemate',  # Update if your DB name is different
+        'NAME': 'RateMateDatabase',  # Update if your DB name is different
         'USER': 'patcav99',
         'PASSWORD': 'XpatgomaX123!$X',  # Fill in your password
         'HOST': 'capstonefinalratemate.cktcge6godzq.us-east-1.rds.amazonaws.com',
