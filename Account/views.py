@@ -79,7 +79,33 @@ class LoginView(APIView):
             
             
             
-# passwodUpdate
+
+
+# View to receive a list of items and store them in the database
+from rest_framework.permissions import AllowAny
+from .models import Subscription
+
+class ReceiveListItemsView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        items = request.data.get('items', None)
+        if items is None or not isinstance(items, list):
+            return Response({
+                'message': 'Invalid data. Expected a list of items under the key "items".',
+                'data': {}
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        saved = []
+        for name in items:
+            if isinstance(name, str) and name.strip():
+                obj, created = Subscription.objects.get_or_create(name=name.strip())
+                saved.append(obj.name)
+
+        return Response({
+            'message': 'List received and stored successfully.',
+            'data': {'saved_items': saved}
+        }, status=status.HTTP_200_OK)
 
 class ChangePasswordView(generics.UpdateAPIView):
         """

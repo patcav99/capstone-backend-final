@@ -82,11 +82,17 @@ WSGI_APPLICATION = 'blog.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/4.0/ref/settings/#databases
 
+
+# MySQL database configuration for subscriptions
 DATABASES = {
-   'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-   }
+    'default': {
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': 'capstonefinalratemate',  # Update if your DB name is different
+        'USER': 'patcav99',
+        'PASSWORD': 'XpatgomaX123!$X',  # Fill in your password
+        'HOST': 'capstonefinalratemate.cktcge6godzq.us-east-1.rds.amazonaws.com',
+        'PORT': '3306',
+    }
 }
 
 
