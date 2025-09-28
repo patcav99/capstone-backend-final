@@ -2,6 +2,7 @@ from django.urls import reverse
 from rest_framework.test import APIClient
 from django.test import TestCase
 
+#TestID 13: deletes a subscription and ensures it's removed from the database
 class SubscriptionDeleteTest(TestCase):
 	def test_delete_subscription_removes_from_db(self):
 		sub = Subscription.objects.create(name='DeleteMe')
@@ -15,6 +16,7 @@ class SubscriptionDeleteTest(TestCase):
 from django.test import TestCase
 from .models import Subscription
 
+#TestID 1: creates a subscription and verifies it exists in the database
 class SubscriptionModelTest(TestCase):
 	def test_create_subscription(self):
 		# Create a new subscription
