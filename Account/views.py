@@ -414,7 +414,7 @@ from rest_framework.permissions import AllowAny
 from .models import Subscription
 # Authenticated view to get subscription details
 class SubscriptionDetailView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
     def get(self, request, pk):
         try:
@@ -422,11 +422,15 @@ class SubscriptionDetailView(APIView):
         except Subscription.DoesNotExist:
             return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-        # Only allow access if the user is subscribed
-        if not subscription.users.filter(id=request.user.id).exists():
-            return Response({'detail': 'You are not subscribed to this account.'}, status=status.HTTP_403_FORBIDDEN)
 
-        serializer = SubscriptionSerializer(subscription)
+        # Try to get SubscriptionDetail
+        try:
+            detail = subscription.detail
+        except SubscriptionDetail.DoesNotExist:
+            return Response({'detail': 'No details found for this subscription.'}, status=status.HTTP_404_NOT_FOUND)
+
+        from .subscription_serializers import SubscriptionDetailSerializer
+        serializer = SubscriptionDetailSerializer(detail)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 class ReceiveListItemsView(APIView):
@@ -451,7 +455,7 @@ class ReceiveListItemsView(APIView):
             if isinstance(item, dict):
                 name = item.get('merchant_name') or item.get('name')
                 if name and name.strip():
-                    subscription, _ = Subscription.objects.get_or_create(name=name.strip())
+                    subscription, created = Subscription.objects.get_or_create(name=name.strip())
                     # Save or update SubscriptionDetail
                     detail_data = {
                         'description': item.get('description'),
@@ -469,10 +473,20 @@ class ReceiveListItemsView(APIView):
                         subscription=subscription,
                         defaults=detail_data
                     )
-                    saved.append(subscription.name)
+                    # Return all fields, but with correct numeric id
+                    saved.append({
+                        'id': subscription.id,
+                        'name': subscription.name,
+                        **detail_data
+                    })
             elif isinstance(item, str) and item.strip():
-                subscription, _ = Subscription.objects.get_or_create(name=item.strip())
-                saved.append(subscription.name)
+                subscription, created = Subscription.objects.get_or_create(name=item.strip())
+                # Always ensure a SubscriptionDetail exists
+                SubscriptionDetail.objects.get_or_create(subscription=subscription)
+                saved.append({
+                    'id': subscription.id,
+                    'name': subscription.name
+                })
 
         return Response({
             'message': 'List received and stored successfully.',
