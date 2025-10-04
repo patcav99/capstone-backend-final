@@ -17,7 +17,7 @@ from rest_framework.views import APIView
 from rest_framework import status
 from .serializers import RegisterSerializer, LoginSerializer, ChangePasswordSerializer
 from .subscription_serializers import SubscriptionSerializer
-from .models import Subscription
+from .models import Subscription, SubscriptionDetail
 import time
 from rest_framework.permissions import IsAuthenticated
 
@@ -433,6 +433,11 @@ class ReceiveListItemsView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
+        print('DEBUG: /receive-list/ endpoint was called!')
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info('Incoming POST data: %s', request.data)
+        print('DEBUG: Incoming POST data:', request.data)
         items = request.data.get('items', None)
         if items is None or not isinstance(items, list):
             return Response({
@@ -441,10 +446,33 @@ class ReceiveListItemsView(APIView):
             }, status=status.HTTP_400_BAD_REQUEST)
 
         saved = []
-        for name in items:
-            if isinstance(name, str) and name.strip():
-                obj, created = Subscription.objects.get_or_create(name=name.strip())
-                saved.append(obj.name)
+        for item in items:
+            # item can be a dict with all fields or just a string (backward compatible)
+            if isinstance(item, dict):
+                name = item.get('merchant_name') or item.get('name')
+                if name and name.strip():
+                    subscription, _ = Subscription.objects.get_or_create(name=name.strip())
+                    # Save or update SubscriptionDetail
+                    detail_data = {
+                        'description': item.get('description'),
+                        'first_date': item.get('first_date'),
+                        'last_date': item.get('last_date'),
+                        'frequency': item.get('frequency'),
+                        'average_amount': item.get('average_amount'),
+                        'last_amount': item.get('last_amount'),
+                        'is_active': item.get('is_active', True),
+                        'predicted_next_date': item.get('predicted_next_date'),
+                        'last_user_modified_time': item.get('last_user_modified_time'),
+                        'status': item.get('status'),
+                    }
+                    SubscriptionDetail.objects.update_or_create(
+                        subscription=subscription,
+                        defaults=detail_data
+                    )
+                    saved.append(subscription.name)
+            elif isinstance(item, str) and item.strip():
+                subscription, _ = Subscription.objects.get_or_create(name=item.strip())
+                saved.append(subscription.name)
 
         return Response({
             'message': 'List received and stored successfully.',
