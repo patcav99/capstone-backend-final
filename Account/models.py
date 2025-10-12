@@ -27,6 +27,7 @@ class SubscriptionDetail(models.Model):
 	predicted_next_date = models.DateField(blank=True, null=True)
 	last_user_modified_time = models.DateTimeField(blank=True, null=True)
 	status = models.CharField(max_length=128, blank=True, null=True)
+	website_url = models.URLField(max_length=512, blank=True, null=True)
 
 	def __str__(self):
 		return f"Details for {self.subscription.name}"

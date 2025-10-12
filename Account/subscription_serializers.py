@@ -14,5 +14,5 @@ class SubscriptionDetailSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'subscription', 'description', 'first_date', 'last_date', 'frequency',
             'average_amount', 'last_amount', 'is_active', 'predicted_next_date',
-            'last_user_modified_time', 'status'
+            'last_user_modified_time', 'status', 'website_url'
         ]
