@@ -1,11 +1,13 @@
 from django.urls import path
 
 from Account.views import RegisterView, LoginView, ChangePasswordView, ReceiveListItemsView, SubscriptionDetailView, JoinSubscriptionView, SubscriptionListView,  DeleteSubscriptionView
+from Account.subscription_averages_view import SubscriptionAveragesView
     
 from . import plaid_views
 
 urlpatterns = [
     path('subscriptions/', SubscriptionListView.as_view(), name='subscription-list'),
+    path('subscription-averages/', SubscriptionAveragesView.as_view(), name='subscription-averages'),
     path('register/', RegisterView.as_view() , name='register'),
     path('login/', LoginView.as_view() , name='login'),
     path('update-password/', ChangePasswordView.as_view() , name='update-password'),
@@ -18,7 +20,6 @@ urlpatterns = [
     path('get_account_balances/', plaid_views.get_account_balances, name='get_account_balances'),
     path('get_transactions/', plaid_views.get_transactions, name='get_transactions'),
     path('get_recurring_transactions/', plaid_views.get_recurring_transactions, name='get_recurring_transactions'),
-    path('get_merchant_website/', plaid_views.get_merchant_website, name='get_merchant_website'),
 ]
 
 

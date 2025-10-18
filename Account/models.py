@@ -28,6 +28,7 @@ class SubscriptionDetail(models.Model):
 	last_user_modified_time = models.DateTimeField(blank=True, null=True)
 	status = models.CharField(max_length=128, blank=True, null=True)
 	website_url = models.URLField(max_length=512, blank=True, null=True)
+	transaction_ids = models.JSONField(blank=True, null=True, default=list)  # Store Plaid transaction IDs
 
 	def __str__(self):
 		return f"Details for {self.subscription.name}"

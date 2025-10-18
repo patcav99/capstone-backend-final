@@ -22,49 +22,6 @@ from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchan
 from plaid import Configuration, ApiClient
 from plaid.api import plaid_api
 from plaid.model.accounts_balance_get_request import AccountsBalanceGetRequest
-# Django view to search for a merchant's website using Selenium
-@csrf_exempt
-@require_POST
-def get_merchant_website(request):
-    import json
-    try:
-        data = json.loads(request.body)
-        merchant_name = data.get('merchant_name')
-        if not merchant_name:
-            return JsonResponse({'error': 'merchant_name required'}, status=400)
-    except Exception:
-        return JsonResponse({'error': 'Invalid JSON'}, status=400)
-
-    options = Options()
-    options.add_argument('--headless')
-    options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage')
-    driver = webdriver.Chrome(options=options)
-    url = None
-    try:
-        driver.get('https://www.google.com')
-        time.sleep(1)
-        # Accept cookies if prompted
-        try:
-            consent = driver.find_element(By.XPATH, "//button[contains(., 'I agree') or contains(., 'Accept all')]")
-            consent.click()
-            time.sleep(1)
-        except Exception:
-            pass
-        search_box = driver.find_element(By.NAME, 'q')
-        search_box.send_keys(merchant_name)
-        search_box.send_keys(Keys.RETURN)
-        time.sleep(2)
-        results = driver.find_elements(By.CSS_SELECTOR, 'div.yuRUbf > a')
-        if results:
-            url = results[0].get_attribute('href')
-    finally:
-        driver.quit()
-    if url:
-        return JsonResponse({'website_url': url})
-    else:
-        return JsonResponse({'error': 'No website found'}, status=404)
-
 
 configuration = Configuration(
     host=os.environ.get("PLAID_ENV_URL", "https://sandbox.plaid.com"),
@@ -92,61 +49,67 @@ def get_recurring_transactions(request):
     else:
         data = {}
     if use_mock:
-        mock_data = {
-            "outflow_streams": [
-                {
-                    "merchant_name": "Netflix",
-                    "description": "Monthly subscription",
-                    "first_date": "2023-01-01",
-                    "last_date": "2023-10-01",
-                    "frequency": "monthly",
-                    "average_amount": {
-                        "amount": 15.99
-                    },
-                    "last_amount": { 
-                        "amount": 15.99
-                    },
-                    "is_active": True,
-                    "predicted_next_date": "2023-11-01",
-                    "last_user_modified_datetime": "2023-10-01T12:00:00Z",
-                    "status": "active"
-                },
-                {
-                    "merchant_name": "Spotify",
-                    "description": "Music subscription",
-                    "first_date": "2023-02-15",
-                    "last_date": "2023-10-15",
-                    "frequency": "monthly",
-                    "average_amount": {
-                        "amount": 9.99
-                    },
-                    "last_amount": { 
-                        "amount": 9.99
-                    },
-                    "is_active": True,
-                    "predicted_next_date": "2023-11-15",
-                    "last_user_modified_datetime": "2023-10-15T12:00:00Z",
-                    "status": "active"
-                },
-                {
-                    "merchant_name": "Planet Fitness",
-                    "description": "Fitness membership",
-                    "first_date": "2023-03-01",
-                    "last_date": "2023-10-01",
-                    "frequency": "monthly",
-                    "average_amount": {
-                        "amount": 40.00
-                    },
-                    "last_amount": { 
-                        "amount": 40.00
-                    },
-                    "is_active": True,
-                    "predicted_next_date": "2023-11-01",
-                    "last_user_modified_datetime": "2023-10-01T12:00:00Z",
-                    "status": "active"
-                }
-            ]
-        }
+        from .models import Subscription, SubscriptionDetail
+        mock_streams = [
+            {
+                "merchant_name": "Netflix",
+                "description": "Monthly subscription",
+                "first_date": "2023-01-01",
+                "last_date": "2023-10-01",
+                "frequency": "monthly",
+                "average_amount": {"amount": 41.99},
+                "last_amount": {"amount": 41.99},
+                "is_active": True,
+                "predicted_next_date": "2025-11-01",
+                "last_user_modified_datetime": "2023-10-01T12:00:00Z",
+                "status": "active"
+            },
+            {
+                "merchant_name": "Spotify",
+                "description": "Music subscription",
+                "first_date": "2023-02-15",
+                "last_date": "2023-10-15",
+                "frequency": "monthly",
+                "average_amount": {"amount": 19.99},
+                "last_amount": {"amount": 19.99},
+                "is_active": True,
+                "predicted_next_date": "2025-11-15",
+                "last_user_modified_datetime": "2023-10-15T12:00:00Z",
+                "status": "active"
+            },
+            {
+                "merchant_name": "Planet Fitness",
+                "description": "Fitness membership",
+                "first_date": "2023-03-01",
+                "last_date": "2023-10-01",
+                "frequency": "monthly",
+                "average_amount": {"amount": 46.00},
+                "last_amount": {"amount": 46.00},
+                "is_active": True,
+                "predicted_next_date": "2025-11-20",
+                "last_user_modified_datetime": "2023-10-01T12:00:00Z",
+                "status": "active"
+            }
+        ]
+        # Update or create in DB
+        for stream in mock_streams:
+            sub, _ = Subscription.objects.get_or_create(name=stream["merchant_name"])
+            detail, _ = SubscriptionDetail.objects.get_or_create(subscription=sub)
+            detail.description = stream["description"]
+            detail.first_date = stream["first_date"]
+            detail.last_date = stream["last_date"]
+            detail.frequency = stream["frequency"]
+            detail.average_amount = stream["average_amount"]["amount"]
+            detail.last_amount = stream["last_amount"]["amount"]
+            detail.is_active = stream["is_active"]
+            detail.predicted_next_date = stream["predicted_next_date"]
+            detail.last_user_modified_time = stream["last_user_modified_datetime"]
+            detail.status = stream["status"]
+            # Attach transaction_ids if present in mock
+            if "transaction_ids" in stream:
+                detail.transaction_ids = stream["transaction_ids"]
+            detail.save()
+        mock_data = {"outflow_streams": mock_streams}
         return JsonResponse(mock_data)
     # Otherwise, fetch from Plaid
     if request.method != 'POST':
@@ -156,7 +119,39 @@ def get_recurring_transactions(request):
         return JsonResponse({'error': 'access_token required'}, status=400)
     req = TransactionsRecurringGetRequest(access_token=access_token)
     response = client.transactions_recurring_get(req)
-    return JsonResponse(response.to_dict())
+    plaid_data = response.to_dict()
+    # Update or create in DB for Plaid data
+    from .models import Subscription, SubscriptionDetail
+    streams = plaid_data.get("outflow_streams", [])
+    for stream in streams:
+        merchant = stream.get("merchant_name")
+        if not merchant:
+            continue
+        sub, _ = Subscription.objects.get_or_create(name=merchant)
+        detail, _ = SubscriptionDetail.objects.get_or_create(subscription=sub)
+        detail.description = stream.get("description")
+        detail.first_date = stream.get("first_date")
+        detail.last_date = stream.get("last_date")
+        detail.frequency = stream.get("frequency")
+        avg_amt = stream.get("average_amount")
+        if isinstance(avg_amt, dict):
+            detail.average_amount = avg_amt.get("amount")
+        else:
+            detail.average_amount = avg_amt
+        last_amt = stream.get("last_amount")
+        if isinstance(last_amt, dict):
+            detail.last_amount = last_amt.get("amount")
+        else:
+            detail.last_amount = last_amt
+        detail.is_active = stream.get("is_active", True)
+        detail.predicted_next_date = stream.get("predicted_next_date")
+        detail.last_user_modified_time = stream.get("last_user_modified_datetime")
+        detail.status = stream.get("status")
+        # Attach transaction_ids if present in Plaid stream
+        if "transaction_ids" in stream:
+            detail.transaction_ids = stream["transaction_ids"]
+        detail.save()
+    return JsonResponse(plaid_data)
 
 # Endpoint to fetch transactions for a given access_token (for testing)
 @csrf_exempt
@@ -168,6 +163,7 @@ def get_transactions(request):
     except Exception:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
     access_token = data.get('access_token')
+    transaction_ids = data.get('transaction_ids')  # Expecting a list of IDs
     if not access_token:
         return JsonResponse({'error': 'access_token required'}, status=400)
     start_date = datetime.date.today() - datetime.timedelta(days=30)
@@ -179,7 +175,11 @@ def get_transactions(request):
         options=TransactionsGetRequestOptions(count=100)
     )
     response = client.transactions_get(req)
-    return JsonResponse(response.to_dict())
+    transactions = response.to_dict().get('transactions', [])
+    if transaction_ids:
+        # Filter transactions by transaction_id
+        transactions = [tx for tx in transactions if tx['transaction_id'] in transaction_ids]
+    return JsonResponse({'transactions': transactions})
 
 # Endpoint to fetch account balances for a given access_token (for testing)
 from django.views.decorators.csrf import csrf_exempt
