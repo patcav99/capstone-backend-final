@@ -1,4 +1,5 @@
-
+# Return only subscriptions for the logged-in user
+from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.decorators import api_view
 import requests
 from django.http import HttpResponse
@@ -17,6 +18,17 @@ from .models import Subscription, SubscriptionDetail
 import time
 from rest_framework.permissions import IsAuthenticated
 
+
+class UserSubscriptionListView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        user = request.user
+        subscriptions = user.subscriptions.all()
+        from .subscription_serializers import SubscriptionSerializer
+        serializer = SubscriptionSerializer(subscriptions, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class DeleteSubscriptionView(APIView):
@@ -158,6 +170,10 @@ class ReceiveListItemsView(APIView):
                 name = item.get('merchant_name') or item.get('name')
                 if name and name.strip():
                     subscription, created = Subscription.objects.get_or_create(name=name.strip())
+                    # Link subscription to user
+                    if request.user.is_authenticated:
+                        subscription.users.add(request.user)
+                        subscription.save()
                     # Google Custom Search API website lookup
                     def get_website_url_from_google(merchant_name):
                         GOOGLE_API_KEY = 'AIzaSyCy3ICt7bHta6kYrd9KOc8UAiMSDc1k4Zo'
@@ -205,6 +221,10 @@ class ReceiveListItemsView(APIView):
                     })
             elif isinstance(item, str) and item.strip():
                 subscription, created = Subscription.objects.get_or_create(name=item.strip())
+                # Link subscription to user
+                if request.user.is_authenticated:
+                    subscription.users.add(request.user)
+                    subscription.save()
                 # Always ensure a SubscriptionDetail exists
                 SubscriptionDetail.objects.get_or_create(subscription=subscription)
                 saved.append({

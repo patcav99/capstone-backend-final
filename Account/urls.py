@@ -1,12 +1,13 @@
 from django.urls import path
 
-from Account.views import RegisterView, LoginView, ChangePasswordView, ReceiveListItemsView, SubscriptionDetailView, JoinSubscriptionView, SubscriptionListView,  DeleteSubscriptionView
+from Account.views import RegisterView, LoginView, ChangePasswordView, ReceiveListItemsView, SubscriptionDetailView, JoinSubscriptionView, SubscriptionListView,  DeleteSubscriptionView, UserSubscriptionListView
 from Account.subscription_averages_view import SubscriptionAveragesView
     
 from . import plaid_views
 
 urlpatterns = [
     path('subscriptions/', SubscriptionListView.as_view(), name='subscription-list'),
+    path('my_subscriptions/', UserSubscriptionListView.as_view(), name='user-subscription-list'),
     path('subscription-averages/', SubscriptionAveragesView.as_view(), name='subscription-averages'),
     path('register/', RegisterView.as_view() , name='register'),
     path('login/', LoginView.as_view() , name='login'),

@@ -35,56 +35,73 @@ client = plaid_api.PlaidApi(api_client)
 # Endpoint to fetch recurring transactions for a given access_token (for testing)
 @csrf_exempt
 def get_recurring_transactions(request):
+    print("DEBUG: get_recurring_transactions called")
     # Toggle mock via query param (?mock=1) or POST field (mock: true)
     use_mock = False
     # Always check query param first for mock toggle
+    data = {}
     if request.GET.get('mock') == '1':
         use_mock = True
+        data = json.loads(request.body)
     elif request.method == 'POST':
         try:
             data = json.loads(request.body)
         except Exception:
             data = {}
+        print("DEBUG: POST data received:", data)
         use_mock = data.get('mock') in [True, '1', 1]
-    else:
-        data = {}
     if use_mock:
+        print("DEBUG: Entered mock branch, data:", data)
         from .models import Subscription, SubscriptionDetail
+        from django.contrib.auth.models import User
+        # Always use username from POST data if provided
+        username = data.get('username')
+        print("DEBUG: Username received in mock branch:", username)
+        user = None
+        if username:
+            try:
+                user = User.objects.get(username=username)
+            except User.DoesNotExist:
+                user = None
+        print("DEBUG: Mock user:", user)
+        if not user:
+            # Fallback to request.user if available
+            user = getattr(request, 'user', None)
         mock_streams = [
             {
-                "merchant_name": "Netflix",
-                "description": "Monthly subscription",
+                "merchant_name": "FedEx",
+                "description": "Delivery subscription",
                 "first_date": "2023-01-01",
                 "last_date": "2023-10-01",
                 "frequency": "monthly",
-                "average_amount": {"amount": 41.99},
-                "last_amount": {"amount": 41.99},
+                "average_amount": {"amount": 12.99},
+                "last_amount": {"amount": 12.99},
                 "is_active": True,
                 "predicted_next_date": "2025-11-01",
                 "last_user_modified_datetime": "2023-10-01T12:00:00Z",
                 "status": "active"
             },
             {
-                "merchant_name": "Spotify",
-                "description": "Music subscription",
+                "merchant_name": "Peacock",
+                "description": "Streaming subscription",
                 "first_date": "2023-02-15",
                 "last_date": "2023-10-15",
                 "frequency": "monthly",
-                "average_amount": {"amount": 19.99},
-                "last_amount": {"amount": 19.99},
+                "average_amount": {"amount": 9.99},
+                "last_amount": {"amount": 9.99},
                 "is_active": True,
                 "predicted_next_date": "2025-11-15",
                 "last_user_modified_datetime": "2023-10-15T12:00:00Z",
                 "status": "active"
             },
             {
-                "merchant_name": "Planet Fitness",
-                "description": "Fitness membership",
+                "merchant_name": "ESPN",
+                "description": "Streaming service",
                 "first_date": "2023-03-01",
                 "last_date": "2023-10-01",
                 "frequency": "monthly",
-                "average_amount": {"amount": 46.00},
-                "last_amount": {"amount": 46.00},
+                "average_amount": {"amount": 21.00},
+                "last_amount": {"amount": 21.00},
                 "is_active": True,
                 "predicted_next_date": "2025-11-20",
                 "last_user_modified_datetime": "2023-10-01T12:00:00Z",
@@ -94,6 +111,11 @@ def get_recurring_transactions(request):
         # Update or create in DB
         for stream in mock_streams:
             sub, _ = Subscription.objects.get_or_create(name=stream["merchant_name"])
+            # Link subscription to user
+            print("DEBUG: Linking subscription to user:", user)
+            if user and getattr(user, 'id', None):
+                sub.users.add(user)
+                sub.save()
             detail, _ = SubscriptionDetail.objects.get_or_create(subscription=sub)
             detail.description = stream["description"]
             detail.first_date = stream["first_date"]
@@ -122,12 +144,28 @@ def get_recurring_transactions(request):
     plaid_data = response.to_dict()
     # Update or create in DB for Plaid data
     from .models import Subscription, SubscriptionDetail
+    from django.contrib.auth.models import User
+    # Always use username from POST data if provided
+    user = None
+    if 'username' in data:
+        try:
+            user = User.objects.get(username=data['username'])
+        except User.DoesNotExist:
+            user = None
+    if not user:
+        # Fallback to request.user if available
+        user = getattr(request, 'user', None)
     streams = plaid_data.get("outflow_streams", [])
     for stream in streams:
         merchant = stream.get("merchant_name")
         if not merchant:
             continue
         sub, _ = Subscription.objects.get_or_create(name=merchant)
+        # Link subscription to user
+        print("DEBUG: Linking subscription to user:", user)
+        if user and getattr(user, 'id', None):
+            sub.users.add(user)
+            sub.save()
         detail, _ = SubscriptionDetail.objects.get_or_create(subscription=sub)
         detail.description = stream.get("description")
         detail.first_date = stream.get("first_date")
