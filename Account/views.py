@@ -136,16 +136,70 @@ class SubscriptionDetailView(APIView):
         except Subscription.DoesNotExist:
             return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-
         # Try to get SubscriptionDetail
         try:
             detail = subscription.detail
         except SubscriptionDetail.DoesNotExist:
             return Response({'detail': 'No details found for this subscription.'}, status=status.HTTP_404_NOT_FOUND)
 
+        # Google Custom Search API to find cancellation page
+        def get_cancel_page_url(subscription_name):
+            GOOGLE_API_KEY = 'AIzaSyCy3ICt7bHta6kYrd9KOc8UAiMSDc1k4Zo'
+            CSE_ID = '97d2ed807210143f9'
+            url = 'https://www.googleapis.com/customsearch/v1'
+            params = {
+                'q': f"{subscription_name} cancel subscription",
+                'key': GOOGLE_API_KEY,
+                'cx': CSE_ID,
+                'num': 1
+            }
+            try:
+                resp = requests.get(url, params=params, timeout=5)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    print(f"[Google Custom Search] Cancel API response for {subscription_name}: {data}")
+                    if 'items' in data and data['items']:
+                        return data['items'][0]['link']
+                else:
+                    print(f"[Google Custom Search] Cancel API FAILED for {subscription_name}: status={resp.status_code}, text={resp.text}")
+            except Exception as e:
+                print(f"[Google Custom Search] Exception: {e}")
+            return None
+
+        def get_reactivate_page_url(subscription_name):
+            GOOGLE_API_KEY = 'AIzaSyCy3ICt7bHta6kYrd9KOc8UAiMSDc1k4Zo'
+            CSE_ID = '97d2ed807210143f9'
+            url = 'https://www.googleapis.com/customsearch/v1'
+            params = {
+                'q': f"{subscription_name} reactivate subscription",
+                'key': GOOGLE_API_KEY,
+                'cx': CSE_ID,
+                'num': 1
+            }
+            try:
+                resp = requests.get(url, params=params, timeout=5)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    print(f"[Google Custom Search] Reactivate API response for {subscription_name}: {data}")
+                    if 'items' in data and data['items']:
+                        return data['items'][0]['link']
+                else:
+                    print(f"[Google Custom Search] Reactivate API FAILED for {subscription_name}: status={resp.status_code}, text={resp.text}")
+            except Exception as e:
+                print(f"[Google Custom Search] Exception: {e}")
+            return None
+
+        cancel_url = get_cancel_page_url(subscription.name)
+        print(f"DEBUG: Cancel URL for {subscription.name}: {cancel_url}")
+        reactivate_url = get_reactivate_page_url(subscription.name)
+        print(f"DEBUG: Reactivate URL for {subscription.name}: {reactivate_url}")
+
         from .subscription_serializers import SubscriptionDetailSerializer
         serializer = SubscriptionDetailSerializer(detail)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        response_data = serializer.data
+        response_data['cancel_url'] = cancel_url
+        response_data['reactivate_url'] = reactivate_url
+        return Response(response_data, status=status.HTTP_200_OK)
 
 class ReceiveListItemsView(APIView):
     

@@ -69,7 +69,7 @@ def get_recurring_transactions(request):
             user = getattr(request, 'user', None)
         mock_streams = [
             {
-                "merchant_name": "FedEx",
+                "merchant_name": "UPS",
                 "description": "Delivery subscription",
                 "first_date": "2023-01-01",
                 "last_date": "2023-10-01",
@@ -82,20 +82,20 @@ def get_recurring_transactions(request):
                 "status": "active"
             },
             {
-                "merchant_name": "Peacock",
+                "merchant_name": "Hulu",
                 "description": "Streaming subscription",
                 "first_date": "2023-02-15",
                 "last_date": "2023-10-15",
                 "frequency": "monthly",
-                "average_amount": {"amount": 9.99},
-                "last_amount": {"amount": 9.99},
+                "average_amount": {"amount": 10.99},
+                "last_amount": {"amount": 10.99},
                 "is_active": True,
                 "predicted_next_date": "2025-11-15",
                 "last_user_modified_datetime": "2023-10-15T12:00:00Z",
                 "status": "active"
             },
             {
-                "merchant_name": "ESPN",
+                "merchant_name": "FOX Sports",
                 "description": "Streaming service",
                 "first_date": "2023-03-01",
                 "last_date": "2023-10-01",
