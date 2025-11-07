@@ -171,7 +171,7 @@ class SubscriptionDetailView(APIView):
             CSE_ID = '97d2ed807210143f9'
             url = 'https://www.googleapis.com/customsearch/v1'
             params = {
-                'q': f"{subscription_name} reactivate subscription",
+                'q': f"{subscription_name} how to reactivate subscription",
                 'key': GOOGLE_API_KEY,
                 'cx': CSE_ID,
                 'num': 1
