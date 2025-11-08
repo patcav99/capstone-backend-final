@@ -54,6 +54,7 @@ def get_recurring_transactions(request):
         print("DEBUG: Entered mock branch, data:", data)
         from .models import Subscription, SubscriptionDetail
         from django.contrib.auth.models import User
+        from .subscription_serializers import SubscriptionSerializer
         # Always use username from POST data if provided
         username = data.get('username')
         print("DEBUG: Username received in mock branch:", username)
@@ -69,10 +70,12 @@ def get_recurring_transactions(request):
             user = getattr(request, 'user', None)
         mock_streams = [
             {
-                "merchant_name": "UPS",
+                "id": 11,
+                "name": "StubHub",
+                "merchant_name": "StubHub",
                 "description": "Delivery subscription",
                 "first_date": "2023-01-01",
-                "last_date": "2023-10-01",
+                "last_date": "2025-11-02",
                 "frequency": "monthly",
                 "average_amount": {"amount": 12.99},
                 "last_amount": {"amount": 12.99},
@@ -82,10 +85,12 @@ def get_recurring_transactions(request):
                 "status": "active"
             },
             {
-                "merchant_name": "Hulu",
+                "id": 12,
+                "name": "WMMR",
+                "merchant_name": "WMMR",
                 "description": "Streaming subscription",
                 "first_date": "2023-02-15",
-                "last_date": "2023-10-15",
+                "last_date": "2023-10-20",
                 "frequency": "monthly",
                 "average_amount": {"amount": 10.99},
                 "last_amount": {"amount": 10.99},
@@ -95,14 +100,16 @@ def get_recurring_transactions(request):
                 "status": "active"
             },
             {
-                "merchant_name": "FOX Sports",
+                "id": 13,
+                "name": "WWE Network",
+                "merchant_name": "WWE Network",
                 "description": "Streaming service",
                 "first_date": "2023-03-01",
-                "last_date": "2023-10-01",
+                "last_date": "2025-10-15",
                 "frequency": "monthly",
                 "average_amount": {"amount": 21.00},
                 "last_amount": {"amount": 21.00},
-                "is_active": True,
+                "is_active": False,
                 "predicted_next_date": "2025-11-20",
                 "last_user_modified_datetime": "2023-10-01T12:00:00Z",
                 "status": "active"
@@ -123,7 +130,20 @@ def get_recurring_transactions(request):
             detail.frequency = stream["frequency"]
             detail.average_amount = stream["average_amount"]["amount"]
             detail.last_amount = stream["last_amount"]["amount"]
-            detail.is_active = stream["is_active"]
+            # Mark inactive if last_date > 1 month ago
+            last_date_obj = None
+            try:
+                last_date_obj = datetime.datetime.strptime(stream["last_date"], "%Y-%m-%d").date()
+            except Exception as e:
+                print(f"DEBUG: Could not parse last_date for {stream['merchant_name']}: {e}")
+            is_active = stream["is_active"]
+            if last_date_obj:
+                days_since_last = (datetime.date.today() - last_date_obj).days
+                if days_since_last > 31:
+                    is_active = False
+                else:
+                    is_active = True
+            detail.is_active = is_active
             detail.predicted_next_date = stream["predicted_next_date"]
             detail.last_user_modified_time = stream["last_user_modified_datetime"]
             detail.status = stream["status"]
@@ -131,8 +151,13 @@ def get_recurring_transactions(request):
             if "transaction_ids" in stream:
                 detail.transaction_ids = stream["transaction_ids"]
             detail.save()
-        mock_data = {"outflow_streams": mock_streams}
-        return JsonResponse(mock_data)
+        # Fetch and return all subscriptions for the user from the DB
+        if user and getattr(user, 'id', None):
+            subs = user.subscriptions.all()
+            serializer = SubscriptionSerializer(subs, many=True)
+            return JsonResponse({"subscriptions": serializer.data})
+        else:
+            return JsonResponse({"subscriptions": []})
     # Otherwise, fetch from Plaid
     if request.method != 'POST':
         return JsonResponse({'error': 'POST required'}, status=405)
@@ -181,7 +206,20 @@ def get_recurring_transactions(request):
             detail.last_amount = last_amt.get("amount")
         else:
             detail.last_amount = last_amt
-        detail.is_active = stream.get("is_active", True)
+        # Mark inactive if last_date > 1 month ago
+        last_date_obj = None
+        try:
+            last_date_val = stream.get("last_date")
+            if last_date_val:
+                last_date_obj = datetime.datetime.strptime(last_date_val, "%Y-%m-%d").date()
+        except Exception as e:
+            print(f"DEBUG: Could not parse last_date for {merchant}: {e}")
+        is_active = stream.get("is_active", True)
+        if last_date_obj:
+            days_since_last = (datetime.date.today() - last_date_obj).days
+            if days_since_last > 31:
+                is_active = False
+        detail.is_active = is_active
         detail.predicted_next_date = stream.get("predicted_next_date")
         detail.last_user_modified_time = stream.get("last_user_modified_datetime")
         detail.status = stream.get("status")

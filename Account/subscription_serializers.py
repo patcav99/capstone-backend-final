@@ -2,9 +2,16 @@ from rest_framework import serializers
 from .models import Subscription, SubscriptionDetail
 
 class SubscriptionSerializer(serializers.ModelSerializer):
+    is_active = serializers.SerializerMethodField()
+
     class Meta:
         model = Subscription
-        fields = ['id', 'name']
+        fields = ['id', 'name', 'is_active']
+
+    def get_is_active(self, obj):
+        # Get is_active from related SubscriptionDetail
+        detail = SubscriptionDetail.objects.filter(subscription=obj).first()
+        return detail.is_active if detail else None
 
 
 # Serializer for SubscriptionDetail

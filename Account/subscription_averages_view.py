@@ -35,6 +35,7 @@ class SubscriptionAveragesView(APIView):
                 'id': sub.id,
                 'name': sub.name,
                 'average_amount': float(avg) if avg is not None else None,
-                'predicted_next_date': str(predicted_next_date) if predicted_next_date else None
+                'predicted_next_date': str(predicted_next_date) if predicted_next_date else None,
+                'is_active': sub.detail.is_active if hasattr(sub, 'detail') else None
             })
         return Response({'subscriptions': data}, status=status.HTTP_200_OK)
