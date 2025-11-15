@@ -22,7 +22,8 @@ urlpatterns = [
     path('exchange_public_token/', plaid_views.exchange_public_token, name='exchange_public_token'),
     path('get_account_balances/', plaid_views.get_account_balances, name='get_account_balances'),
     path('get_transactions/', plaid_views.get_transactions, name='get_transactions'),
-    path('get_recurring_transactions/', plaid_views.get_recurring_transactions, name='get_recurring_transactions')
+    path('get_recurring_transactions/', plaid_views.get_recurring_transactions, name='get_recurring_transactions'),
+    path('recommend_subscriptions_to_keep/', __import__('Account.views').views.recommend_subscriptions_to_keep, name='recommend_subscriptions_to_keep')
 ]
 
 

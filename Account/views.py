@@ -17,6 +17,8 @@ from .subscription_serializers import SubscriptionSerializer
 from .models import Subscription, SubscriptionDetail
 import time
 from rest_framework.permissions import IsAuthenticated
+from decimal import Decimal
+from rest_framework.decorators import api_view, permission_classes
 
 
 class UserSubscriptionListView(APIView):
@@ -252,18 +254,19 @@ class ReceiveListItemsView(APIView):
                     website_url = get_website_url_from_google(name)
                     # Save or update SubscriptionDetail
                     detail_data = {
-                        'description': item.get('description'),
-                        'first_date': item.get('first_date'),
-                        'last_date': item.get('last_date'),
-                        'frequency': item.get('frequency'),
-                        'average_amount': item.get('average_amount'),
-                        'last_amount': item.get('last_amount'),
-                        'is_active': item.get('is_active', True),
-                        'predicted_next_date': item.get('predicted_next_date'),
-                        'last_user_modified_time': item.get('last_user_modified_time'),
-                        'status': item.get('status'),
-                        'website_url': website_url
-                    }
+                            'description': item.get('description'),
+                            'first_date': item.get('first_date'),
+                            'last_date': item.get('last_date'),
+                            'frequency': item.get('frequency'),
+                            'average_amount': item.get('average_amount'),
+                            'last_amount': item.get('last_amount'),
+                            'is_active': item.get('is_active', True),
+                            'predicted_next_date': item.get('predicted_next_date'),
+                            'last_user_modified_time': item.get('last_user_modified_time'),
+                            'status': item.get('status'),
+                            'website_url': website_url,
+                            'merchant_name': item.get('merchant_name') or item.get('name')
+                        }
                     SubscriptionDetail.objects.update_or_create(
                         subscription=subscription,
                         defaults=detail_data
@@ -326,5 +329,154 @@ class ChangePasswordView(generics.UpdateAPIView):
 
                 return Response(response)
 
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)            
-             
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+# Backtracking algorithm to select subscriptions to keep under budget
+def select_subscriptions_under_budget(subscriptions, budget):
+    # subscriptions: list of dicts with 'id', 'name', 'average_amount', 'is_active'
+    # budget: Decimal
+    n = len(subscriptions)
+    best = {'total': Decimal('0'), 'keep': []}
+
+    def backtrack(i, current_total, current_keep):
+        if current_total > budget:
+            return
+        if i == n:
+            if current_total > best['total']:
+                best['total'] = current_total
+                best['keep'] = current_keep[:]
+            return
+        # Option 1: keep this subscription
+        amt = subscriptions[i]['average_amount'] or Decimal('0')
+        backtrack(i+1, current_total+amt, current_keep+[subscriptions[i]['id']])
+        # Option 2: skip this subscription
+        backtrack(i+1, current_total, current_keep)
+
+    backtrack(0, Decimal('0'), [])
+    return best['keep']
+
+# Backtracking algorithm to select subscriptions to keep under budget, prioritizing by user ranking
+# subscriptions: list of dicts with 'id', 'name', 'average_amount', 'is_active', 'rank'
+def select_subscriptions_under_budget_ranked(subscriptions, budget):
+    # Sort subscriptions by rank (lower rank = higher priority)
+    subscriptions_sorted = sorted(subscriptions, key=lambda x: x['rank'])
+    n = len(subscriptions_sorted)
+    best = {'total': Decimal('0'), 'keep': [], 'ranksum': float('inf')}
+    all_solutions = []
+
+    def backtrack(i, current_total, current_keep, current_ranksum):
+        if current_total > budget:
+            return
+        if i == n:
+            # Prefer solutions with the most subscriptions, then lowest ranksum, then highest total
+            score = (len(current_keep), -current_ranksum, current_total)
+            best_score = (len(best['keep']), -best['ranksum'], best['total'])
+            if score > best_score:
+                best['total'] = current_total
+                best['keep'] = current_keep[:]
+                best['ranksum'] = current_ranksum
+                all_solutions.clear()
+                all_solutions.append({'keep': current_keep[:], 'total': current_total, 'ranksum': current_ranksum})
+            elif score == best_score:
+                # Only add unique solutions
+                if not any(set(sol['keep']) == set(current_keep) for sol in all_solutions):
+                    all_solutions.append({'keep': current_keep[:], 'total': current_total, 'ranksum': current_ranksum})
+            return
+        # Option 1: keep this subscription
+        amt = subscriptions_sorted[i]['average_amount'] or Decimal('0')
+        rank = subscriptions_sorted[i]['rank']
+        backtrack(i+1, current_total+amt, current_keep+[subscriptions_sorted[i]['id']], current_ranksum+rank)
+        # Option 2: skip this subscription
+        backtrack(i+1, current_total, current_keep, current_ranksum)
+
+    backtrack(0, Decimal('0'), [], 0)
+    return all_solutions if all_solutions else [{'keep': best['keep'], 'total': best['total'], 'ranksum': best['ranksum']}]
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def recommend_subscriptions_to_keep(request):
+    """
+    Receives: { "budget": 100.00, "access_token": "...", "ranks": [id1, id2, ...] }
+    Returns: { "keep": [ids], "cancel": [ids], "total": sum, "other_transactions": sum, "all_spending": sum }
+    Considers active subscriptions and all other transactions for the user in the last month. Prioritizes by user ranking.
+    """
+    user = request.user
+    budget = request.data.get('budget')
+    access_token = request.data.get('access_token')
+    ranks = request.data.get('ranks', [])  # Array of subscription IDs in priority order
+    try:
+        budget = Decimal(str(budget))
+    except Exception:
+        return Response({'error': 'Invalid budget'}, status=400)
+    subs = user.subscriptions.all()
+    sub_details = SubscriptionDetail.objects.filter(subscription__in=subs, is_active=True)
+    subscriptions = []
+    # Assign rank based on position in ranks array (lower index = higher priority)
+    id_to_rank = {int(sub_id): idx for idx, sub_id in enumerate(ranks)}
+    for detail in sub_details:
+        amt = detail.average_amount if detail.average_amount else Decimal('0')
+        sub_id = detail.subscription.id
+        rank = id_to_rank.get(sub_id, len(ranks))  # Unranked go last
+        subscriptions.append({
+            'id': sub_id,
+            'name': detail.subscription.name,
+            'average_amount': amt,
+            'is_active': detail.is_active,
+            'rank': rank
+        })
+    # Fetch all transactions for the user for the last month using Plaid
+    other_transactions_total = Decimal('0')
+    if access_token:
+        import datetime
+        from plaid.model.transactions_get_request import TransactionsGetRequest
+        from plaid.model.transactions_get_request_options import TransactionsGetRequestOptions
+        from plaid.api import plaid_api
+        from plaid import Configuration, ApiClient
+        import os
+        configuration = Configuration(
+            host=os.environ.get("PLAID_ENV_URL", "https://sandbox.plaid.com"),
+            api_key={
+                "clientId": os.environ["PLAID_CLIENT_ID"],
+                "secret": os.environ["PLAID_SECRET"],
+            }
+        )
+        api_client = ApiClient(configuration)
+        client = plaid_api.PlaidApi(api_client)
+        start_date = datetime.date.today() - datetime.timedelta(days=30)
+        end_date = datetime.date.today()
+        req = TransactionsGetRequest(
+            access_token=access_token,
+            start_date=start_date,
+            end_date=end_date,
+            options=TransactionsGetRequestOptions(count=100)
+        )
+        try:
+            response = client.transactions_get(req)
+            transactions = response.to_dict().get('transactions', [])
+            sub_merchants = set([s['name'] for s in subscriptions])
+            for tx in transactions:
+                merchant = tx.get('merchant_name') or tx.get('name')
+                amount = abs(Decimal(str(tx.get('amount', 0))))
+                if merchant not in sub_merchants:
+                    other_transactions_total += amount
+        except Exception as e:
+            print(f"DEBUG: Error fetching transactions for budget: {e}")
+    solutions = select_subscriptions_under_budget_ranked(subscriptions, budget - other_transactions_total)
+    response_list = []
+    for sol in solutions:
+        keep_ids = sol['keep']
+        cancel_ids = [s['id'] for s in subscriptions if s['id'] not in keep_ids]
+        total_subs = sum([s['average_amount'] for s in subscriptions if s['id'] in keep_ids])
+        all_spending = total_subs + other_transactions_total
+        response_list.append({
+            'keep': keep_ids,
+            'cancel': cancel_ids,
+            'total_subscriptions': str(total_subs),
+            'other_transactions': str(other_transactions_total),
+            'all_spending': str(all_spending)
+        })
+    from rest_framework.response import Response
+    # Return a list of solutions if more than one, else a single dict for compatibility
+    if len(response_list) == 1:
+        return Response(response_list[0])
+    return Response(response_list)

@@ -172,25 +172,32 @@ def get_recurring_transactions(request):
     from django.contrib.auth.models import User
     # Always use username from POST data if provided
     user = None
-    if 'username' in data:
+    username = data.get('username')
+    if username:
         try:
-            user = User.objects.get(username=data['username'])
+            user = User.objects.get(username=username)
+            print(f"DEBUG: Found user by username '{username}': id={user.id}")
         except User.DoesNotExist:
+            print(f"DEBUG: No user found for username '{username}'")
             user = None
     if not user:
         # Fallback to request.user if available
         user = getattr(request, 'user', None)
+        print(f"DEBUG: Fallback to request.user: {user} (id={getattr(user, 'id', None)})")
     streams = plaid_data.get("outflow_streams", [])
     for stream in streams:
         merchant = stream.get("merchant_name")
         if not merchant:
             continue
         sub, _ = Subscription.objects.get_or_create(name=merchant)
-        # Link subscription to user
-        print("DEBUG: Linking subscription to user:", user)
+        # Always link subscription to user
+        print(f"DEBUG: Attempting to link subscription '{merchant}' to user: {user} (id={getattr(user, 'id', None)})")
         if user and getattr(user, 'id', None):
             sub.users.add(user)
             sub.save()
+            print(f"DEBUG: Linked subscription '{merchant}' to user id {user.id}")
+        else:
+            print(f"DEBUG: No valid user found for subscription '{merchant}'")
         detail, _ = SubscriptionDetail.objects.get_or_create(subscription=sub)
         detail.description = stream.get("description")
         detail.first_date = stream.get("first_date")
@@ -226,6 +233,8 @@ def get_recurring_transactions(request):
         # Attach transaction_ids if present in Plaid stream
         if "transaction_ids" in stream:
             detail.transaction_ids = stream["transaction_ids"]
+        # Always set merchant_name for Plaid subscriptions
+        detail.merchant_name = stream.get("merchant_name") or stream.get("name")
         detail.save()
     return JsonResponse(plaid_data)
 
@@ -240,6 +249,8 @@ def get_transactions(request):
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
     access_token = data.get('access_token')
     transaction_ids = data.get('transaction_ids')  # Expecting a list of IDs
+    print(f"DEBUG: get_transactions received access_token: {access_token}")
+    print(f"DEBUG: get_transactions received transaction_ids: {transaction_ids}")
     if not access_token:
         return JsonResponse({'error': 'access_token required'}, status=400)
     start_date = datetime.date.today() - datetime.timedelta(days=30)

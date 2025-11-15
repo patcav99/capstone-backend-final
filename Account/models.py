@@ -16,21 +16,22 @@ class Subscription(models.Model):
 
 # Model to store detailed subscription fields from Plaid recurring transactions
 class SubscriptionDetail(models.Model):
-		subscription = models.OneToOneField(Subscription, on_delete=models.CASCADE, related_name='detail')
-		description = models.CharField(max_length=512, blank=True, null=True)
-		first_date = models.DateField(blank=True, null=True)
-		last_date = models.DateField(blank=True, null=True)
-		frequency = models.CharField(max_length=128, blank=True, null=True)
-		average_amount = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-		last_amount = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
-		is_active = models.BooleanField(default=True)
-		predicted_next_date = models.DateField(blank=True, null=True)
-		last_user_modified_time = models.DateTimeField(blank=True, null=True)
-		status = models.CharField(max_length=128, blank=True, null=True)
-		website_url = models.URLField(max_length=512, blank=True, null=True)
-		transaction_ids = models.JSONField(blank=True, null=True, default=list)  # Store Plaid transaction IDs
-		cancel_url = models.URLField(blank=True, null=True)
-		reactivate_url = models.URLField(blank=True, null=True)
+	subscription = models.OneToOneField(Subscription, on_delete=models.CASCADE, related_name='detail')
+	description = models.CharField(max_length=512, blank=True, null=True)
+	first_date = models.DateField(blank=True, null=True)
+	last_date = models.DateField(blank=True, null=True)
+	frequency = models.CharField(max_length=128, blank=True, null=True)
+	average_amount = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
+	last_amount = models.DecimalField(max_digits=12, decimal_places=2, blank=True, null=True)
+	is_active = models.BooleanField(default=True)
+	predicted_next_date = models.DateField(blank=True, null=True)
+	last_user_modified_time = models.DateTimeField(blank=True, null=True)
+	status = models.CharField(max_length=128, blank=True, null=True)
+	website_url = models.URLField(max_length=512, blank=True, null=True)
+	transaction_ids = models.JSONField(blank=True, null=True, default=list)  # Store Plaid transaction IDs
+	cancel_url = models.URLField(blank=True, null=True)
+	reactivate_url = models.URLField(blank=True, null=True)
+	merchant_name = models.CharField(max_length=255, blank=True, null=True)
 
 def __str__(self):
 	return f"Details for {self.subscription.name}"
