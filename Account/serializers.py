@@ -20,23 +20,24 @@ class ChangePasswordSerializer(serializers.Serializer):
 class RegisterSerializer(serializers.Serializer):
     first_name = serializers.CharField()
     last_name = serializers.CharField()
-    
+    email = serializers.EmailField()
     username = serializers.CharField()
     password = serializers.CharField()
 
     def validate(self, data):
-
         if User.objects.filter(username=data['username']).exists():
             raise serializers.ValidationError("Username already in use")
-        
+        if User.objects.filter(email=data['email']).exists():
+            raise serializers.ValidationError("Email already in use")
         return data
-    
 
     def create(self, validated_data):
-        user = User.objects.create(first_name= validated_data['first_name'],
-           last_name= validated_data['last_name'],
-           username = validated_data['username'].lower()
-         )   
+        user = User.objects.create(
+            first_name=validated_data['first_name'],
+            last_name=validated_data['last_name'],
+            username=validated_data['username'].lower(),
+            email=validated_data['email']
+        )
         user.set_password(validated_data['password'])
         user.save()
         return validated_data

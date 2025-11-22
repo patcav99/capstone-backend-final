@@ -209,6 +209,14 @@ LOGGING = {
     },
 }
 
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'  # or your provider
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'pat.cavalieri.99@gmail.com'
+EMAIL_HOST_PASSWORD = 'efcu tlkh rqge sqtb'  # Use app password if 2FA is enabled
+DEFAULT_FROM_EMAIL = 'RateMate <pat.cavalieri.99@gmail.com>'
+
 PLAID_CLIENT_ID = os.getenv('PLAID_CLIENT_ID')
 PLAID_SECRET = os.getenv('PLAID_SECRET')
 PLAID_ENV_URL = os.getenv('PLAID_ENV_URL', 'https://sandbox.plaid.com')

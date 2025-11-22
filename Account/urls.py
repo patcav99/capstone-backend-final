@@ -1,6 +1,6 @@
 from django.urls import path
 
-from Account.views import RegisterView, LoginView, ChangePasswordView, ReceiveListItemsView, SubscriptionDetailView, JoinSubscriptionView, SubscriptionListView,  DeleteSubscriptionView, UserSubscriptionListView
+from Account.views import RegisterView, LoginView, ChangePasswordView, ReceiveListItemsView, SubscriptionDetailView, JoinSubscriptionView, SubscriptionListView,  DeleteSubscriptionView, UserSubscriptionListView, request_password_reset, password_reset_confirm
 from Account.subscription_averages_view import SubscriptionAveragesView
     
 from . import plaid_views
@@ -23,7 +23,9 @@ urlpatterns = [
     path('get_account_balances/', plaid_views.get_account_balances, name='get_account_balances'),
     path('get_transactions/', plaid_views.get_transactions, name='get_transactions'),
     path('get_recurring_transactions/', plaid_views.get_recurring_transactions, name='get_recurring_transactions'),
-    path('recommend_subscriptions_to_keep/', __import__('Account.views').views.recommend_subscriptions_to_keep, name='recommend_subscriptions_to_keep')
+    path('recommend_subscriptions_to_keep/', __import__('Account.views').views.recommend_subscriptions_to_keep, name='recommend_subscriptions_to_keep'),
+    path('request-password-reset/', request_password_reset, name='request-password-reset'),
+    path('password-reset-confirm/', password_reset_confirm, name='password-reset-confirm')
 ]
 
 

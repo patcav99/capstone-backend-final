@@ -1,3 +1,64 @@
+# REST framework imports first
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework import status, generics
+from rest_framework_simplejwt.authentication import JWTAuthentication
+# Django imports
+from django.core.mail import send_mail
+from django.utils.crypto import get_random_string
+from django.conf import settings
+from django.urls import reverse
+from django.contrib.auth.tokens import default_token_generator
+from django.contrib.auth import get_user_model
+from django.template.loader import render_to_string
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.utils.encoding import force_bytes, force_str
+# Password reset request endpoint
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def request_password_reset(request):
+    email = request.data.get('email')
+    if not email:
+        return Response({'error': 'Email required'}, status=400)
+    User = get_user_model()
+    try:
+        user = User.objects.get(email=email)
+    except User.DoesNotExist:
+        # Don't reveal if email exists
+        return Response({'message': 'If your email is registered, you will receive a password reset link.'})
+    token = default_token_generator.make_token(user)
+    uid = urlsafe_base64_encode(force_bytes(user.pk))
+    # Use frontend URL for password reset link
+    frontend_url = 'http://patcav.shop/password-reset-confirm'
+    reset_url = f'{frontend_url}?uid={uid}&token={token}'
+    subject = 'RateMate Password Reset'
+    message = f'Click the link to reset your password: {reset_url}'
+    print(f"DEBUG: Sending password reset email to {email} with subject '{subject}' and message '{message}'")
+    send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [email], fail_silently=False)
+    return Response({'message': 'If your email is registered, you will receive a password reset link.'})
+
+# Password reset confirm endpoint
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def password_reset_confirm(request):
+    uid = request.data.get('uid')
+    token = request.data.get('token')
+    new_password = request.data.get('new_password')
+    if not (uid and token and new_password):
+        return Response({'error': 'Missing parameters'}, status=400)
+    User = get_user_model()
+    try:
+        uid_int = force_str(urlsafe_base64_decode(uid))
+        user = User.objects.get(pk=uid_int)
+    except Exception:
+        return Response({'error': 'Invalid user'}, status=400)
+    if not default_token_generator.check_token(user, token):
+        return Response({'error': 'Invalid or expired token'}, status=400)
+    user.set_password(new_password)
+    user.save()
+    return Response({'message': 'Password has been reset successfully.'})
 # Return only subscriptions for the logged-in user
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.decorators import api_view
@@ -73,28 +134,35 @@ class RegisterView(APIView):
 
     def post(self, request):
         try:
-            data =request.data
-
-            serializer = RegisterSerializer(data= data)
-
+            data = request.data
+            serializer = RegisterSerializer(data=data)
             if not serializer.is_valid():
                 return Response({
-                   'data' : serializer.errors,
-                   'message' : 'something went wrong'
-                }, status= status.HTTP_400_BAD_REQUEST)
-
+                    'data': serializer.errors,
+                    'message': 'something went wrong'
+                }, status=status.HTTP_400_BAD_REQUEST)
             serializer.save()
-
+            # Generate JWT token for the new user
+            from django.contrib.auth import authenticate
+            from rest_framework_simplejwt.tokens import RefreshToken
+            user = authenticate(username=data['username'].lower(), password=data['password'])
+            if user:
+                refresh = RefreshToken.for_user(user)
+                token_data = {
+                    'refresh': str(refresh),
+                    'access': str(refresh.access_token)
+                }
+            else:
+                token_data = None
             return Response({
-                'data' : {},
+                'data': {'token': token_data},
                 'message': 'Your Account is created'
-            }, status= status.HTTP_201_CREATED)   
-
+            }, status=status.HTTP_201_CREATED)
         except Exception as e:
             return Response({
-                   'data' : {},
-                   'message' : 'something went wrong'
-                }, status= status.HTTP_400_BAD_REQUEST)
+                'data': {},
+                'message': 'something went wrong'
+            }, status=status.HTTP_400_BAD_REQUEST)
 
 # It takes in a request, validates the request, and returns a response
 
