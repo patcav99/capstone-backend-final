@@ -23,11 +23,22 @@ from plaid import Configuration, ApiClient
 from plaid.api import plaid_api
 from plaid.model.accounts_balance_get_request import AccountsBalanceGetRequest
 
+import os
+
+# Determine Plaid environment
+PLAID_ENV = os.environ.get("PLAID_ENV", "sandbox")
+if PLAID_ENV == "production":
+    PLAID_ENV_URL = "https://production.plaid.com"
+    PLAID_SECRET = os.environ.get("PLAID_PROD_SECRET")
+else:
+    PLAID_ENV_URL = "https://sandbox.plaid.com"
+    PLAID_SECRET = os.environ.get("PLAID_SANDBOX_SECRET")
+
 configuration = Configuration(
-    host=os.environ.get("PLAID_ENV_URL", "https://sandbox.plaid.com"),
+    host=PLAID_ENV_URL,
     api_key={
         "clientId": os.environ["PLAID_CLIENT_ID"],
-        "secret": os.environ["PLAID_SECRET"],
+        "secret": PLAID_SECRET,
     }
 )
 api_client = ApiClient(configuration)
@@ -165,8 +176,12 @@ def get_recurring_transactions(request):
     if not access_token:
         return JsonResponse({'error': 'access_token required'}, status=400)
     req = TransactionsRecurringGetRequest(access_token=access_token)
-    response = client.transactions_recurring_get(req)
-    plaid_data = response.to_dict()
+    try:
+        response = client.transactions_recurring_get(req)
+        plaid_data = response.to_dict()
+    except Exception as e:
+        print(f"PLAID ERROR: {e}")
+        return JsonResponse({'error': f'Plaid internal error: {str(e)}'}, status=500)
     # Update or create in DB for Plaid data
     from .models import Subscription, SubscriptionDetail
     from django.contrib.auth.models import User
@@ -293,8 +308,12 @@ def create_link_token(request):
         country_codes=[CountryCode("US")],
         language="en"
     )
-    response = client.link_token_create(req)
-    return JsonResponse(response.to_dict())
+    try:
+        response = client.link_token_create(req)
+        return JsonResponse(response.to_dict())
+    except Exception as e:
+        print(f"PLAID ERROR (create_link_token): {e}")
+        return JsonResponse({'error': f'Plaid internal error: {str(e)}'}, status=500)
 
 @csrf_exempt
 def exchange_public_token(request):
@@ -308,7 +327,11 @@ def exchange_public_token(request):
     if not public_token:
         return JsonResponse({'error': 'public_token required'}, status=400)
     req = ItemPublicTokenExchangeRequest(public_token=public_token)
-    response = client.item_public_token_exchange(req)
-    access_token = response.to_dict().get("access_token")
-    # Save access_token securely in your DB, associated with the user
-    return JsonResponse({"access_token": access_token})
+    try:
+        response = client.item_public_token_exchange(req)
+        access_token = response.to_dict().get("access_token")
+        # Save access_token securely in your DB, associated with the user
+        return JsonResponse({"access_token": access_token})
+    except Exception as e:
+        print(f"PLAID ERROR (exchange_public_token): {e}")
+        return JsonResponse({'error': f'Plaid internal error: {str(e)}'}, status=500)
