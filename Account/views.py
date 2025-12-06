@@ -331,7 +331,7 @@ class ReceiveListItemsView(APIView):
                         subscription.save()
                     # Google Custom Search API website lookup
                     def get_website_url_from_google(merchant_name):
-                        GOOGLE_API_KEY = 'AIzaSyCy3ICt7bHta6kYrd9KOc8UAiMSDc1k4Zo'
+                        GOOGLE_API_KEY = 'AIzaSyAX9Xd6l0euv5doG9nXHEcqFK-2Nf4lpi0'
                         CSE_ID = '97d2ed807210143f9'
                         url = 'https://www.googleapis.com/customsearch/v1'
                         params = {
@@ -342,16 +342,21 @@ class ReceiveListItemsView(APIView):
                         }
                         try:
                             resp = requests.get(url, params=params, timeout=5)
+                            print(f"[Google Custom Search] Response status: {resp.status_code}")
+                            print(f"[Google Custom Search] Response text: {resp.text}")
                             if resp.status_code == 200:
                                 data = resp.json()
                                 if 'items' in data and data['items']:
+                                    print(f"[Google Custom Search] Found website URL: {data['items'][0]['link']}")
                                     return data['items'][0]['link']
                         except Exception as e:
                             print(f"[Google Custom Search] Exception: {e}")
                         return None
 
+                    print(f"[Google Custom Search] About to call get_website_url_from_google with merchant name: {name}")
                     website_url = get_website_url_from_google(name)
-                    # Save or update SubscriptionDetail
+                    print(f"[Google Custom Search] Final website_url to save: {website_url}")
+                    # Save or update SubscriptionDetail. Only set website_url if we actually found one
                     detail_data = {
                             'description': item.get('description'),
                             'first_date': item.get('first_date'),
@@ -363,9 +368,10 @@ class ReceiveListItemsView(APIView):
                             'predicted_next_date': item.get('predicted_next_date'),
                             'last_user_modified_time': item.get('last_user_modified_time'),
                             'status': item.get('status'),
-                            'website_url': website_url,
                             'merchant_name': item.get('merchant_name') or item.get('name')
                         }
+                    if website_url:
+                        detail_data['website_url'] = website_url
                     SubscriptionDetail.objects.update_or_create(
                         subscription=subscription,
                         defaults=detail_data

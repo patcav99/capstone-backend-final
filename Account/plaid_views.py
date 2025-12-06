@@ -165,6 +165,35 @@ def get_recurring_transactions(request):
                 else:
                     is_active = True
             detail.is_active = is_active
+            # --- Website URL lookup using Google Custom Search for mock subscriptions ---
+            def get_website_url_from_google(merchant_name):
+                GOOGLE_API_KEY = 'AIzaSyAX9Xd6l0euv5doG9nXHEcqFK-2Nf4lpi0'
+                CSE_ID = '97d2ed807210143f9'
+                url = 'https://www.googleapis.com/customsearch/v1'
+                params = {
+                    'q': merchant_name,
+                    'key': GOOGLE_API_KEY,
+                    'cx': CSE_ID,
+                    'num': 1
+                }
+                try:
+                    resp = requests.get(url, params=params, timeout=5)
+                    print(f"[Google Custom Search] (Mock) Response status: {resp.status_code}")
+                    print(f"[Google Custom Search] (Mock) Response text: {resp.text}")
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if 'items' in data and data['items']:
+                            print(f"[Google Custom Search] (Mock) Found website URL: {data['items'][0]['link']}")
+                            return data['items'][0]['link']
+                except Exception as e:
+                    print(f"[Google Custom Search] (Mock) Exception: {e}")
+                return None
+
+            print(f"[Google Custom Search] (Mock) About to call get_website_url_from_google with merchant name: {stream['merchant_name']}")
+            website_url = get_website_url_from_google(stream['merchant_name'])
+            print(f"[Google Custom Search] (Mock) Final website_url to save: {website_url}")
+            if website_url:
+                detail.website_url = website_url
             detail.save()
     # Otherwise, fetch from Plaid
     if request.method != 'POST':
@@ -251,6 +280,35 @@ def get_recurring_transactions(request):
             detail.transaction_ids = stream["transaction_ids"]
         # Always set merchant_name for Plaid subscriptions
         detail.merchant_name = stream.get("merchant_name") or stream.get("name")
+        # --- Website URL lookup using Google Custom Search ---
+        def get_website_url_from_google(merchant_name):
+            GOOGLE_API_KEY = 'AIzaSyAX9Xd6l0euv5doG9nXHEcqFK-2Nf4lpi0'
+            CSE_ID = '97d2ed807210143f9'
+            url = 'https://www.googleapis.com/customsearch/v1'
+            params = {
+                'q': merchant_name,
+                'key': GOOGLE_API_KEY,
+                'cx': CSE_ID,
+                'num': 1
+            }
+            try:
+                resp = requests.get(url, params=params, timeout=5)
+                print(f"[Google Custom Search] Response status: {resp.status_code}")
+                print(f"[Google Custom Search] Response text: {resp.text}")
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if 'items' in data and data['items']:
+                        print(f"[Google Custom Search] Found website URL: {data['items'][0]['link']}")
+                        return data['items'][0]['link']
+            except Exception as e:
+                print(f"[Google Custom Search] Exception: {e}")
+            return None
+
+        print(f"[Google Custom Search] About to call get_website_url_from_google with merchant name: {merchant}")
+        website_url = get_website_url_from_google(merchant)
+        print(f"[Google Custom Search] Final website_url to save: {website_url}")
+        if website_url:
+            detail.website_url = website_url
         detail.save()
     # Fetch and return all subscriptions for the user from the DB (with inactivity check)
     if user and getattr(user, 'id', None):
