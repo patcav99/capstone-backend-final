@@ -15,6 +15,27 @@ from django.contrib.auth import get_user_model
 from django.template.loader import render_to_string
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework.decorators import api_view
+import requests
+from django.http import HttpResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.shortcuts import render
+from rest_framework import generics
+from rest_framework.response import Response
+from django.contrib.auth.models import User
+from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework.views import APIView
+from rest_framework import status
+from .serializers import RegisterSerializer, LoginSerializer, ChangePasswordSerializer
+from .subscription_serializers import SubscriptionSerializer
+from .models import Subscription, SubscriptionDetail
+import time
+from rest_framework.permissions import IsAuthenticated
+from decimal import Decimal
+from rest_framework.decorators import api_view, permission_classes
+
 # Password reset request endpoint
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -60,27 +81,6 @@ def password_reset_confirm(request):
     user.save()
     return Response({'message': 'Password has been reset successfully.'})
 # Return only subscriptions for the logged-in user
-from rest_framework_simplejwt.authentication import JWTAuthentication
-from rest_framework.decorators import api_view
-import requests
-from django.http import HttpResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.shortcuts import render
-from rest_framework import generics
-from rest_framework.response import Response
-from django.contrib.auth.models import User
-from rest_framework.permissions import IsAuthenticated, AllowAny
-from rest_framework_simplejwt.authentication import JWTAuthentication
-from rest_framework.views import APIView
-from rest_framework import status
-from .serializers import RegisterSerializer, LoginSerializer, ChangePasswordSerializer
-from .subscription_serializers import SubscriptionSerializer
-from .models import Subscription, SubscriptionDetail
-import time
-from rest_framework.permissions import IsAuthenticated
-from decimal import Decimal
-from rest_framework.decorators import api_view, permission_classes
-
 
 class UserSubscriptionListView(APIView):
     permission_classes = [IsAuthenticated]
@@ -88,7 +88,18 @@ class UserSubscriptionListView(APIView):
 
     def get(self, request):
         user = request.user
+        from .plaid_views import check_db_subs_inactivity
+        check_db_subs_inactivity(user)
+        # Force refresh from DB to get latest is_active status
         subscriptions = user.subscriptions.all()
+        print("DEBUG: User subscriptions and their is_active status:")
+        from .models import SubscriptionDetail
+        for sub in subscriptions:
+            try:
+                detail = SubscriptionDetail.objects.get(subscription=sub)
+            except SubscriptionDetail.DoesNotExist:
+                detail = None
+                print(f"  id={sub.id}, name={sub.name}, is_active={getattr(detail, 'is_active', None)}")
         from .subscription_serializers import SubscriptionSerializer
         serializer = SubscriptionSerializer(subscriptions, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -105,7 +116,27 @@ class DeleteSubscriptionView(APIView):
 
 # List all subscriptions
 class SubscriptionListView(generics.ListAPIView):
-    queryset = Subscription.objects.all()
+    def get_queryset(self):
+        from .plaid_views import check_db_subs_inactivity
+        subs = Subscription.objects.all()
+        from django.contrib.auth.models import User
+        users = User.objects.all()
+        for user in users:
+            check_db_subs_inactivity(user)
+        # Force refresh from DB to get latest is_active status
+        return Subscription.objects.all()
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        print("DEBUG: All database subscriptions (global list):")
+        from .models import SubscriptionDetail
+        for sub in queryset:
+            try:
+                detail = SubscriptionDetail.objects.get(subscription=sub)
+            except SubscriptionDetail.DoesNotExist:
+                detail = None
+            print(f"  id={sub.id}, name={sub.name}, is_active={getattr(detail, 'is_active', None)}")
+        return super().list(request, *args, **kwargs)
     serializer_class = SubscriptionSerializer
     permission_classes = [AllowAny]
 
@@ -476,7 +507,8 @@ def recommend_subscriptions_to_keep(request):
         budget = Decimal(str(budget))
     except Exception:
         return Response({'error': 'Invalid budget'}, status=400)
-    subs = user.subscriptions.all()
+    from .plaid_views import check_db_subs_inactivity
+    subs = check_db_subs_inactivity(user)
     sub_details = SubscriptionDetail.objects.filter(subscription__in=subs, is_active=True)
     subscriptions = []
     # Assign rank based on position in ranks array (lower index = higher priority)
@@ -501,11 +533,19 @@ def recommend_subscriptions_to_keep(request):
         from plaid.api import plaid_api
         from plaid import Configuration, ApiClient
         import os
+        # Use the same Plaid secret logic as plaid_views.py
+        PLAID_ENV = os.environ.get("PLAID_ENV", "sandbox")
+        if PLAID_ENV == "production":
+            PLAID_ENV_URL = "https://production.plaid.com"
+            PLAID_SECRET = os.environ.get("PLAID_PROD_SECRET")
+        else:
+            PLAID_ENV_URL = "https://sandbox.plaid.com"
+            PLAID_SECRET = os.environ.get("PLAID_SANDBOX_SECRET")
         configuration = Configuration(
-            host=os.environ.get("PLAID_ENV_URL", "https://sandbox.plaid.com"),
+            host=PLAID_ENV_URL,
             api_key={
                 "clientId": os.environ["PLAID_CLIENT_ID"],
-                "secret": os.environ["PLAID_SECRET"],
+                "secret": PLAID_SECRET,
             }
         )
         api_client = ApiClient(configuration)
@@ -548,3 +588,41 @@ def recommend_subscriptions_to_keep(request):
     if len(response_list) == 1:
         return Response(response_list[0])
     return Response(response_list)
+
+from django.utils import timezone
+from datetime import timedelta
+from django.http import JsonResponse
+
+@api_view(['GET'])
+def subscription_lookup(request, sub_id, action):
+    """
+    Lookup cancel/reactivate URL for a subscription, using cache in SubscriptionDetail.
+    action: 'cancel' or 'reactivate'
+    """
+    try:
+        sub = Subscription.objects.get(pk=sub_id)
+        detail = sub.detail
+    except (Subscription.DoesNotExist, SubscriptionDetail.DoesNotExist):
+        return JsonResponse({'error': 'Subscription or details not found.'}, status=404)
+
+    # Choose field and cache time
+    field = 'cancel_url' if action == 'cancel' else 'reactivate_url'
+    last_lookup_field = 'last_user_modified_time'  # You may want a separate field for API lookup time
+    cached_url = getattr(detail, field, None)
+    last_lookup = getattr(detail, last_lookup_field, None)
+    now = timezone.now()
+    cache_valid = last_lookup and (now - last_lookup < timedelta(hours=24))
+
+    if cached_url and cache_valid:
+        return JsonResponse({'url': cached_url, 'cached': True})
+
+    # Otherwise, make Google Search API call (pseudo-code)
+    # result_url = google_search_api_call(sub.name, action)
+    result_url = f"https://www.google.com/search?q={sub.name}+{action}"  # Replace with real API call
+    setattr(detail, field, result_url)
+    detail.last_user_modified_time = now
+    detail.save()
+    return JsonResponse({'url': result_url, 'cached': False})
+
+# Add to urlpatterns in urls.py:
+# path('subscription/<int:sub_id>/lookup/<str:action>/', subscription_lookup, name='subscription-lookup'),

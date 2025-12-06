@@ -74,31 +74,35 @@ def get_recurring_transactions(request):
             try:
                 user = User.objects.get(username=username)
             except User.DoesNotExist:
+                print(f"DEBUG: No user found for username '{username}'")
                 user = None
-        print("DEBUG: Mock user:", user)
         if not user:
             # Fallback to request.user if available
             user = getattr(request, 'user', None)
+            print(f"DEBUG: Fallback to request.user: {user} (id={getattr(user, 'id', None)})")
+        if not user or not getattr(user, 'id', None):
+            print("ERROR: No valid user found for linking subscriptions. Aborting subscription linking.")
+            return JsonResponse({'error': 'No valid user found for linking subscriptions.'}, status=400)
         mock_streams = [
             {
-                "id": 11,
-                "name": "StubHub",
-                "merchant_name": "StubHub",
+                "id": 20,
+                "name": "Target",
+                "merchant_name": "Target",
                 "description": "Delivery subscription",
                 "first_date": "2023-01-01",
                 "last_date": "2025-11-02",
                 "frequency": "monthly",
-                "average_amount": {"amount": 15.99},
-                "last_amount": {"amount": 15.99},
+                "average_amount": {"amount": 23.99},
+                "last_amount": {"amount": 23.99},
                 "is_active": True,
                 "predicted_next_date": "2025-11-01",
                 "last_user_modified_datetime": "2023-10-01T12:00:00Z",
                 "status": "active"
             },
             {
-                "id": 12,
-                "name": "WMMR",
-                "merchant_name": "WMMR",
+                "id": 15,
+                "name": "Hulu",
+                "merchant_name": "Hulu",
                 "description": "Streaming subscription",
                 "first_date": "2023-02-15",
                 "last_date": "2023-10-20",
@@ -111,12 +115,12 @@ def get_recurring_transactions(request):
                 "status": "active"
             },
             {
-                "id": 13,
-                "name": "WWE Network",
-                "merchant_name": "WWE Network",
+                "id": 17,
+                "name": "Netflix",
+                "merchant_name": "Netflix",
                 "description": "Streaming service",
                 "first_date": "2023-03-01",
-                "last_date": "2025-10-15",
+                "last_date": "2025-11-15",
                 "frequency": "monthly",
                 "average_amount": {"amount": 27.00},
                 "last_amount": {"amount": 27.00},
@@ -135,13 +139,18 @@ def get_recurring_transactions(request):
                 sub.users.add(user)
                 sub.save()
             detail, _ = SubscriptionDetail.objects.get_or_create(subscription=sub)
-            detail.description = stream["description"]
-            detail.first_date = stream["first_date"]
-            detail.last_date = stream["last_date"]
-            detail.frequency = stream["frequency"]
-            detail.average_amount = stream["average_amount"]["amount"]
-            detail.last_amount = stream["last_amount"]["amount"]
-            # Mark inactive if last_date > 1 month ago
+            detail.description = stream.get("description")
+            detail.first_date = stream.get("first_date")
+            detail.last_date = stream.get("last_date")
+            detail.frequency = stream.get("frequency")
+            detail.average_amount = stream.get("average_amount", {}).get("amount")
+            detail.last_amount = stream.get("last_amount", {}).get("amount")
+            detail.predicted_next_date = stream.get("predicted_next_date")
+            # last_user_modified_time: handle both possible keys
+            detail.last_user_modified_time = stream.get("last_user_modified_time") or stream.get("last_user_modified_datetime")
+            detail.status = stream.get("status")
+            detail.merchant_name = stream.get("merchant_name")
+            # Mark inactive if last_date > 30 days ago
             last_date_obj = None
             try:
                 last_date_obj = datetime.datetime.strptime(stream["last_date"], "%Y-%m-%d").date()
@@ -150,25 +159,13 @@ def get_recurring_transactions(request):
             is_active = stream["is_active"]
             if last_date_obj:
                 days_since_last = (datetime.date.today() - last_date_obj).days
-                if days_since_last > 31:
+                print(f"DEBUG: {stream['merchant_name']} last_date={stream['last_date']} days_since_last={days_since_last} is_active(before)={stream['is_active']} is_active(after)={'False' if days_since_last > 30 else 'True'}")
+                if days_since_last > 30:
                     is_active = False
                 else:
                     is_active = True
             detail.is_active = is_active
-            detail.predicted_next_date = stream["predicted_next_date"]
-            detail.last_user_modified_time = stream["last_user_modified_datetime"]
-            detail.status = stream["status"]
-            # Attach transaction_ids if present in mock
-            if "transaction_ids" in stream:
-                detail.transaction_ids = stream["transaction_ids"]
             detail.save()
-        # Fetch and return all subscriptions for the user from the DB
-        if user and getattr(user, 'id', None):
-            subs = user.subscriptions.all()
-            serializer = SubscriptionSerializer(subs, many=True)
-            return JsonResponse({"subscriptions": serializer.data})
-        else:
-            return JsonResponse({"subscriptions": []})
     # Otherwise, fetch from Plaid
     if request.method != 'POST':
         return JsonResponse({'error': 'POST required'}, status=405)
@@ -203,6 +200,7 @@ def get_recurring_transactions(request):
     for stream in streams:
         merchant = stream.get("merchant_name")
         if not merchant:
+            print("DEBUG: No merchant_name in stream, skipping.")
             continue
         sub, _ = Subscription.objects.get_or_create(name=merchant)
         # Always link subscription to user
@@ -228,7 +226,7 @@ def get_recurring_transactions(request):
             detail.last_amount = last_amt.get("amount")
         else:
             detail.last_amount = last_amt
-        # Mark inactive if last_date > 1 month ago
+        # Mark inactive if last_date > 30 days ago
         last_date_obj = None
         try:
             last_date_val = stream.get("last_date")
@@ -239,8 +237,11 @@ def get_recurring_transactions(request):
         is_active = stream.get("is_active", True)
         if last_date_obj:
             days_since_last = (datetime.date.today() - last_date_obj).days
-            if days_since_last > 31:
+            print(f"DEBUG: {merchant} last_date={last_date_val} days_since_last={days_since_last} is_active(before)={is_active} is_active(after)={'False' if days_since_last > 30 else 'True'}")
+            if days_since_last > 30:
                 is_active = False
+            else:
+                is_active = True
         detail.is_active = is_active
         detail.predicted_next_date = stream.get("predicted_next_date")
         detail.last_user_modified_time = stream.get("last_user_modified_datetime")
@@ -251,7 +252,17 @@ def get_recurring_transactions(request):
         # Always set merchant_name for Plaid subscriptions
         detail.merchant_name = stream.get("merchant_name") or stream.get("name")
         detail.save()
-    return JsonResponse(plaid_data)
+    # Fetch and return all subscriptions for the user from the DB (with inactivity check)
+    if user and getattr(user, 'id', None):
+        from .subscription_serializers import SubscriptionSerializer
+        subs = check_db_subs_inactivity(user)
+        print("DEBUG: Subscriptions and their is_active status after inactivity check:")
+        for sub in subs:
+            print(f"  id={sub.id}, name={sub.name}, is_active={getattr(sub, 'is_active', None)}")
+        serializer = SubscriptionSerializer(subs, many=True)
+        return JsonResponse({"subscriptions": serializer.data})
+    else:
+        return JsonResponse({"subscriptions": []})
 
 # Endpoint to fetch transactions for a given access_token (for testing)
 @csrf_exempt
@@ -268,19 +279,42 @@ def get_transactions(request):
     print(f"DEBUG: get_transactions received transaction_ids: {transaction_ids}")
     if not access_token:
         return JsonResponse({'error': 'access_token required'}, status=400)
-    start_date = datetime.date.today() - datetime.timedelta(days=30)
-    end_date = datetime.date.today()
+    # Remove date filter to fetch all available transactions
     req = TransactionsGetRequest(
         access_token=access_token,
-        start_date=start_date,
-        end_date=end_date,
-        options=TransactionsGetRequestOptions(count=100)
+        start_date=datetime.date(2000, 1, 1),  # Earliest possible date as date object
+        end_date=datetime.date.today(),
+        options=TransactionsGetRequestOptions(count=500)
     )
     response = client.transactions_get(req)
     transactions = response.to_dict().get('transactions', [])
-    if transaction_ids:
-        # Filter transactions by transaction_id
+    # Print all merchant names and IDs from Plaid before filtering
+    print('DEBUG: All Plaid transactions before filtering:')
+    for tx in transactions:
+        print(f"  transaction_id={tx.get('transaction_id')}, merchant_name={tx.get('merchant_name')}, name={tx.get('name')}")
+
+    # Filter by merchant name if requested
+    merchant_name = data.get('merchant_name')
+    if merchant_name:
+        merchant_name_lower = merchant_name.lower()
+        print(f"DEBUG: Filtering for merchant_name='{merchant_name}' (lower='{merchant_name_lower}')")
+        filtered = []
+        for tx in transactions:
+            tx_merchant = tx.get('merchant_name', '')
+            tx_name = tx.get('name', '')
+            tx_merchant_lower = tx_merchant.lower() if tx_merchant else ''
+            tx_name_lower = tx_name.lower() if tx_name else ''
+            print(f"  Checking tx_id={tx.get('transaction_id')}: merchant_name='{tx_merchant}' (lower='{tx_merchant_lower}'), name='{tx_name}' (lower='{tx_name_lower}')")
+            if (merchant_name_lower in tx_merchant_lower) or (merchant_name_lower in tx_name_lower):
+                print(f"    MATCHED!")
+                filtered.append(tx)
+        transactions = filtered
+    elif transaction_ids:
         transactions = [tx for tx in transactions if tx['transaction_id'] in transaction_ids]
+    # Debug print merchant names of all returned transactions
+    print('DEBUG: Returned transaction merchant_names:')
+    for tx in transactions:
+        print(f"  transaction_id={tx.get('transaction_id')}, merchant_name={tx.get('merchant_name')}, name={tx.get('name')}")
     return JsonResponse({'transactions': transactions})
 
 # Endpoint to fetch account balances for a given access_token (for testing)
@@ -335,3 +369,37 @@ def exchange_public_token(request):
     except Exception as e:
         print(f"PLAID ERROR (exchange_public_token): {e}")
         return JsonResponse({'error': f'Plaid internal error: {str(e)}'}, status=500)
+
+def check_db_subs_inactivity(user):
+    subs = user.subscriptions.all()
+    today = datetime.date.today()
+    print(f"DEBUG: Running inactivity check for user id={getattr(user, 'id', None)}, username={getattr(user, 'username', None)}")
+    for sub in subs:
+        detail = getattr(sub, 'detail', None)
+        last_date = None
+        print(f"DEBUG: Checking sub id={sub.id}, name={sub.name}")
+        if detail:
+            print(f"DEBUG: Found SubscriptionDetail for sub id={sub.id}")
+        else:
+            print(f"DEBUG: No SubscriptionDetail for sub id={sub.id}")
+        if detail and hasattr(detail, 'last_date') and detail.last_date:
+            print(f"DEBUG: Raw last_date value for sub id={sub.id}: {detail.last_date}")
+            try:
+                last_date = detail.last_date if isinstance(detail.last_date, datetime.date) else datetime.datetime.strptime(str(detail.last_date), "%Y-%m-%d").date()
+            except Exception as e:
+                print(f"DEBUG: Could not parse last_date for {getattr(sub, 'name', sub.id)}: {e}")
+            if last_date:
+                days_since_last = (today - last_date).days
+                print(f"DEBUG: sub id={sub.id}, name={sub.name}, last_date={last_date}, today={today}, days_since_last={days_since_last}")
+                if days_since_last > 30:
+                    detail.is_active = False
+                    print(f"DEBUG: DB subscription {getattr(sub, 'name', sub.id)} last_date={last_date} days_since_last={days_since_last} is_active=False (saving)")
+                else:
+                    detail.is_active = True
+                    print(f"DEBUG: DB subscription {getattr(sub, 'name', sub.id)} last_date={last_date} days_since_last={days_since_last} is_active=True (saving)")
+                detail.save()
+            else:
+                print(f"DEBUG: No valid last_date for sub id={sub.id}")
+        else:
+            print(f"DEBUG: No last_date for sub id={sub.id}")
+    return subs

@@ -10,14 +10,18 @@ class SubscriptionAveragesView(APIView):
     def get(self, request):
         # Get all subscriptions and their average_amount (if any)
         data = []
+        from datetime import date
         for sub in Subscription.objects.all():
             avg = None
             predicted_next_date = None
-            try:
+            predicted_next_date_obj = None
+            is_active = None
+            # Use hasattr to check for detail, always include sub
+            if hasattr(sub, 'detail') and sub.detail is not None:
                 avg = sub.detail.average_amount
                 predicted_next_date = sub.detail.predicted_next_date
+                is_active = sub.detail.is_active
                 # Only return predicted_next_date if it is today or in the future
-                from datetime import date
                 if predicted_next_date:
                     if isinstance(predicted_next_date, str):
                         try:
@@ -25,17 +29,14 @@ class SubscriptionAveragesView(APIView):
                         except Exception:
                             predicted_next_date_obj = None
                     else:
-                            predicted_next_date_obj = predicted_next_date
-                if predicted_next_date_obj and predicted_next_date_obj < date.today():
-                            predicted_next_date = None
-            except SubscriptionDetail.DoesNotExist:
-                avg = None
-                predicted_next_date = None
+                        predicted_next_date_obj = predicted_next_date
+                    if predicted_next_date_obj and predicted_next_date_obj < date.today():
+                        predicted_next_date = None
             data.append({
                 'id': sub.id,
                 'name': sub.name,
                 'average_amount': float(avg) if avg is not None else None,
                 'predicted_next_date': str(predicted_next_date) if predicted_next_date else None,
-                'is_active': sub.detail.is_active if hasattr(sub, 'detail') else None
+                'is_active': is_active
             })
         return Response({'subscriptions': data}, status=status.HTTP_200_OK)
